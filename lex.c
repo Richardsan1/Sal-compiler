@@ -1,11 +1,7 @@
 #include "lex.h"
+#include "opt.h" // Necessário para acessar opt_tokens e opts_get_basename
 #include <ctype.h>
 #include <string.h>
-#include "opt.h"
-#include "diag.h"
-
-
-
 
 static FILE *src = NULL;
 static int linha_atual = 1;
@@ -15,7 +11,7 @@ void lex_init(FILE *src_file) {
     linha_atual = 1;
 }
 
-// Retorna uma string com o nome da categoria (útil para o arquivo .tk)
+// Retorna uma string com o nome da categoria
 const char* lex_cat_name(TokenCat cat) {
     switch(cat) {
         case sMODULE: return "sMODULE"; case sGLOBALS: return "sGLOBALS";
@@ -50,7 +46,7 @@ const char* lex_cat_name(TokenCat cat) {
     }
 }
 
-// Identifica palavras reservadas
+// Identifica palavras reservadas da linguagem SAL
 static TokenCat classificar_identificador(const char* lexema) {
     if (strcmp(lexema, "module") == 0) return sMODULE;
     if (strcmp(lexema, "globals") == 0) return sGLOBALS;
@@ -87,6 +83,7 @@ static TokenCat classificar_identificador(const char* lexema) {
     return sIDENTIF;
 }
 
+// Lida com espaços em branco e os comentários '@' e '@{ }@'
 static void pular_espacos_e_comentarios() {
     int c;
     while ((c = fgetc(src)) != EOF) {
@@ -142,11 +139,9 @@ Token lex_next(void) {
         ungetc(c, src);
         tk.lexema[i] = '\0';
         tk.cat = classificar_identificador(tk.lexema);
-        return tk;
     }
-
     // 2. Constantes Inteiras
-    if (isdigit(c)) {
+    else if (isdigit(c)) {
         int i = 0;
         do {
             if (i < MAX_LEXEMA - 1) tk.lexema[i++] = c;
@@ -155,24 +150,20 @@ Token lex_next(void) {
         ungetc(c, src);
         tk.lexema[i] = '\0';
         tk.cat = sCTEINT;
-        return tk;
     }
-
     // 3. Strings ("...")
-    if (c == '"') {
+    else if (c == '"') {
         int i = 0;
         tk.lexema[i++] = c;
         while ((c = fgetc(src)) != EOF && c != '"') {
             if (i < MAX_LEXEMA - 1) tk.lexema[i++] = c;
         }
-        if (c == '"') tk.lexema[i++] = c; // Inclui a aspa final
+        if (c == '"') tk.lexema[i++] = c; 
         tk.lexema[i] = '\0';
         tk.cat = sSTRING;
-        return tk;
     }
-
     // 4. Caracteres ('c')
-    if (c == '\'') {
+    else if (c == '\'') {
         int i = 0;
         tk.lexema[i++] = c;
         while ((c = fgetc(src)) != EOF && c != '\'') {
@@ -181,98 +172,97 @@ Token lex_next(void) {
         if (c == '\'') tk.lexema[i++] = c;
         tk.lexema[i] = '\0';
         tk.cat = sCTECHAR;
-        return tk;
+    }
+    // 5. Operadores Simples e Compostos
+    else {
+        tk.lexema[0] = c;
+        tk.lexema[1] = '\0';
+        
+        switch (c) {
+            case ':':
+                c = fgetc(src);
+                if (c == '=') {
+                    strcpy(tk.lexema, ":=");
+                    tk.cat = sATRIB;
+                } else {
+                    ungetc(c, src);
+                    tk.cat = sDOIS_PONTOS;
+                }
+                break;
+            case '=':
+                c = fgetc(src);
+                if (c == '>') {
+                    strcpy(tk.lexema, "=>");
+                    tk.cat = sIMPLIC;
+                } else {
+                    ungetc(c, src);
+                    tk.cat = sIGUAL;
+                }
+                break;
+            case '<':
+                c = fgetc(src);
+                if (c == '=') {
+                    strcpy(tk.lexema, "<=");
+                    tk.cat = sMENORIG;
+                } else if (c == '>') {
+                    strcpy(tk.lexema, "<>");
+                    tk.cat = sDIFERENTE;
+                } else {
+                    ungetc(c, src);
+                    tk.cat = sMENOR;
+                }
+                break;
+            case '>':
+                c = fgetc(src);
+                if (c == '=') {
+                    strcpy(tk.lexema, ">=");
+                    tk.cat = sMAIORIG;
+                } else {
+                    ungetc(c, src);
+                    tk.cat = sMAIOR;
+                }
+                break;
+            case '.':
+                c = fgetc(src);
+                if (c == '.') {
+                    strcpy(tk.lexema, "..");
+                    tk.cat = sPTOPTO;
+                } else {
+                    ungetc(c, src);
+                    tk.cat = sERRO; 
+                }
+                break;
+            
+            case ';': tk.cat = sPONTO_VIRG; break;
+            case ',': tk.cat = sVIRGULA; break;
+            case '(': tk.cat = sABRE_PAR; break;
+            case ')': tk.cat = sFECHA_PAR; break;
+            case '[': tk.cat = sABRE_COL; break;
+            case ']': tk.cat = sFECHA_COL; break;
+            case '+': tk.cat = sSOMA; break;
+            case '-': tk.cat = sSUBRAT; break;
+            case '*': tk.cat = sMULT; break;
+            case '/': tk.cat = sDIV; break;
+            case '^': tk.cat = sAND; break;
+            case '~': tk.cat = sNEG; break;
+            
+            default:
+                tk.cat = sERRO;
+                break;
+        }
     }
 
-    // 5. Operadores Simples e Compostos
-    tk.lexema[0] = c;
-    tk.lexema[1] = '\0';
-    
-    switch (c) {
-        case ':':
-            c = fgetc(src);
-            if (c == '=') {
-                strcpy(tk.lexema, ":=");
-                tk.cat = sATRIB;
-            } else {
-                ungetc(c, src);
-                tk.cat = sDOIS_PONTOS;
-            }
-            break;
-        case '=':
-            c = fgetc(src);
-            if (c == '>') {
-                strcpy(tk.lexema, "=>");
-                tk.cat = sIMPLIC;
-            } else {
-                ungetc(c, src);
-                tk.cat = sIGUAL;
-            }
-            break;
-        case '<':
-            c = fgetc(src);
-            if (c == '=') {
-                strcpy(tk.lexema, "<=");
-                tk.cat = sMENORIG;
-            } else if (c == '>') {
-                strcpy(tk.lexema, "<>");
-                tk.cat = sDIFERENTE;
-            } else {
-                ungetc(c, src);
-                tk.cat = sMENOR;
-            }
-            break;
-        case '>':
-            c = fgetc(src);
-            if (c == '=') {
-                strcpy(tk.lexema, ">=");
-                tk.cat = sMAIORIG;
-            } else {
-                ungetc(c, src);
-                tk.cat = sMAIOR;
-            }
-            break;
-        case '.':
-            c = fgetc(src);
-            if (c == '.') {
-                strcpy(tk.lexema, "..");
-                tk.cat = sPTOPTO;
-            } else {
-                ungetc(c, src);
-                tk.cat = sERRO; // Em SAL, ponto sozinho não é válido
-            }
-            break;
-        
-        // Operadores e delimitadores simples
-        case ';': tk.cat = sPONTO_VIRG; break;
-        case ',': tk.cat = sVIRGULA; break;
-        case '(': tk.cat = sABRE_PAR; break;
-        case ')': tk.cat = sFECHA_PAR; break;
-        case '[': tk.cat = sABRE_COL; break;
-        case ']': tk.cat = sFECHA_COL; break;
-        case '+': tk.cat = sSOMA; break;
-        case '-': tk.cat = sSUBRAT; break;
-        case '*': tk.cat = sMULT; break;
-        case '/': tk.cat = sDIV; break;
-        case '^': tk.cat = sAND; break;
-        case '~': tk.cat = sNEG; break;
-        
-        default:
-            tk.cat = sERRO;
-            break;
-    }
-    
+    // --- Lógica de geração do log .tk (Flag --tokens) ---
     if (opt_tokens && tk.cat != sEOF && tk.cat != sERRO) {
         static FILE *tk_file = NULL;
         if (!tk_file) {
             char filename[256];
-            extern void opts_get_basename(char*);
-            opts_get_basename(filename);
+            opts_get_basename(filename); // Função vinda de opt.h
             strcat(filename, ".tk");
             tk_file = fopen(filename, "w");
         }
         if (tk_file) {
-            // Formato: linha  <CATEGORIA>  "<lexema>"
+            // Formato exigido: linha  <CATEGORIA>  "<lexema>"
             fprintf(tk_file, "%-4d <%s> \"%s\"\n", tk.linha, lex_cat_name(tk.cat), tk.lexema);
         }
     }
