@@ -2,6 +2,7 @@
 #include "opt.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 static FILE *trace_file = NULL;
 

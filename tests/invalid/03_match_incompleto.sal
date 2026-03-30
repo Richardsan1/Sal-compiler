@@ -1,0 +1,7 @@
+module invalido3;
+proc main()
+start
+  match(1)
+    when 1 => print("x")
+  end;
+end

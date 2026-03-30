@@ -1,0 +1,13 @@
+module vetfor;
+globals
+  i, soma : int;
+  vet[5] : int;
+proc main()
+start
+  for i := 1 to 5 step 1 do vet[i] := i;
+  soma := vet[1] + vet[2] + vet[3];
+  match (soma)
+    when 6 => print("ok");
+    otherwise => print("erro", soma);
+  end;
+end

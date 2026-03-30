@@ -1,0 +1,9 @@
+module basico;
+globals
+  x, y : int;
+proc main()
+start
+  x := 2;
+  y := x + 3;
+  print("y=", y);
+end

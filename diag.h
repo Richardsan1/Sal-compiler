@@ -3,6 +3,10 @@
 
 #include "lex.h"
 
+// Inicializa e finaliza o modulo de diagnostico (trace).
+void diag_init(void);
+void diag_close(void);
+
 // Reporta um erro de sintaxe/semântica, exibe a linha e aborta a compilação.
 void diag_error(Token tk, const char* expected_msg);
 

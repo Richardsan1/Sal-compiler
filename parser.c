@@ -6,6 +6,7 @@
 
 // Lookahead atual
 static Token lookahead;
+static Token lookahead2;
 static int block_counter = 0; // Para nomear escopos anônimos de blocos start..end
 
 // Assinaturas das funções recursivas da gramática
@@ -17,9 +18,19 @@ static void parse_subs(void);
 static void parse_func(void);
 static void parse_proc(void);
 static void parse_princ(void);
-static void parse_param(void);
+static int parse_param(void);
 static void parse_bco(void);
 static void parse_cmd(void);
+static void parse_atr(void);
+static void parse_vec_tail(void);
+static void parse_match(void);
+static void parse_wlist(void);
+static void parse_whn(void);
+static void parse_othr(void);
+static void parse_wcnd(void);
+static void parse_witem(void);
+static void parse_wint(void);
+static void parse_for(void);
 static SymType parse_tpo(void);
 static void parse_expr(void);
 static void parse_exlog(void);
@@ -30,7 +41,8 @@ static void parse_fact(void);
 
 // Avança para o próximo token
 static void next_token() {
-    lookahead = lex_next();
+    lookahead = lookahead2;
+    lookahead2 = lex_next();
 }
 
 // Verifica e consome o token esperado. Se falhar, aborta via diag.
@@ -46,7 +58,8 @@ static void match(TokenCat expected) {
 
 // Ponto de entrada público
 void parse_program(void) {
-    next_token(); // Carrega o primeiro token
+    lookahead = lex_next();
+    lookahead2 = lex_next();
     parse_ini();
     if (lookahead.cat != sEOF) {
         diag_error(lookahead, "Esperado Fim de Arquivo (EOF) apos o modulo principal");
@@ -95,40 +108,45 @@ static void parse_glob(void) {
 // decls ::= id ("," id)* ":" tpo ";"
 static void parse_decls(void) {
     char ids[20][256]; // Suporta até 20 variáveis na mesma linha
+    int is_vec[20] = {0};
+    int vec_size[20] = {0};
     int count = 0;
 
     strcpy(ids[count++], lookahead.lexema);
     match(sIDENTIF);
 
+    if (lookahead.cat == sABRE_COL) {
+        match(sABRE_COL);
+        vec_size[count - 1] = atoi(lookahead.lexema);
+        match(sCTEINT);
+        match(sFECHA_COL);
+        is_vec[count - 1] = 1;
+    }
+
     while (lookahead.cat == sVIRGULA) {
         match(sVIRGULA);
         strcpy(ids[count++], lookahead.lexema);
         match(sIDENTIF);
+
+        if (lookahead.cat == sABRE_COL) {
+            match(sABRE_COL);
+            vec_size[count - 1] = atoi(lookahead.lexema);
+            match(sCTEINT);
+            match(sFECHA_COL);
+            is_vec[count - 1] = 1;
+        }
     }
 
     match(sDOIS_PONTOS);
-    
-    int is_vec = 0;
-    int vec_size = 0;
     SymType type = parse_tpo();
-
-    // Na SAL, vetor é id[tamanho]: tipo; mas a EBNF do apêndice coloca os colchetes na regra 'tpo'. 
-    // Vamos tratar a possibilidade de ser vetor (tpo "[" "sCTEINT" "]")
-    if (lookahead.cat == sABRE_COL) {
-        match(sABRE_COL);
-        is_vec = 1;
-        vec_size = atoi(lookahead.lexema);
-        match(sCTEINT);
-        match(sFECHA_COL);
-    }
 
     match(sPONTO_VIRG);
 
     // Insere todas as variáveis lidas na tabela de símbolos
     for (int i = 0; i < count; i++) {
-        if (!ts_insert(ids[i], is_vec ? symVEC : symVAR, type, vec_size)) {
+        if (!ts_insert(ids[i], is_vec[i] ? symVEC : symVAR, type, vec_size[i])) {
             char msg[256];
-            sprintf(msg, "Variavel '%s' ja declarada neste escopo", ids[i]);
+            snprintf(msg, sizeof(msg), "Variavel '%.200s' ja declarada neste escopo", ids[i]);
             diag_error(lookahead, msg);
         }
     }
@@ -154,12 +172,10 @@ static SymType parse_tpo(void) {
 
 // subs ::= (func | proc)+
 static void parse_subs(void) {
-    while (lookahead.cat == sFN || (lookahead.cat == sPROC && strcmp(lookahead.lexema, "main") != 0)) {
+    while (lookahead.cat == sFN || (lookahead.cat == sPROC && lookahead2.cat != sMAIN)) {
         if (lookahead.cat == sFN) {
             parse_func();
         } else {
-            // É um proc, mas precisamos garantir que não é o main (lookahead.lexema tem o nome, mas o lexer consumiu o sPROC. 
-            // O ideal é a lógica ver o próximo token, mas simplificamos checando o tipo).
             parse_proc();
         }
     }
@@ -176,7 +192,8 @@ static void parse_func(void) {
     
     // Registra a função no escopo atual (geralmente global)
     // O tipo de retorno e a qtd de params seriam preenchidos corretamente
-    ts_insert(fn_name, symFUNC, typeNONE, 0); 
+    ts_insert(fn_name, symFUNC, typeNONE, 0);
+    Symbol *fn_sym = ts_lookup(fn_name);
     
     // Abre o escopo da função
     char scope_name[300];
@@ -184,13 +201,19 @@ static void parse_func(void) {
     ts_push_scope(scope_name);
 
     match(sABRE_PAR);
+    int param_count = 0;
     if (lookahead.cat == sIDENTIF) {
-        parse_param();
+        param_count = parse_param();
     }
     match(sFECHA_PAR);
     
     match(sDOIS_PONTOS);
-    parse_tpo(); // Lê o tipo de retorno
+    SymType ret_type = parse_tpo();
+
+    if (fn_sym != NULL) {
+        fn_sym->type = ret_type;
+        fn_sym->extra = param_count;
+    }
 
     if (lookahead.cat == sLOCALS) {
         match(sLOCALS);
@@ -214,16 +237,22 @@ static void parse_proc(void) {
     match(sIDENTIF);
     
     ts_insert(proc_name, symPROC, typeVOID, 0); 
+    Symbol *proc_sym = ts_lookup(proc_name);
 
     char scope_name[300];
     sprintf(scope_name, "proc:%s.locals", proc_name);
     ts_push_scope(scope_name);
 
     match(sABRE_PAR);
+    int param_count = 0;
     if (lookahead.cat == sIDENTIF) {
-        parse_param();
+        param_count = parse_param();
     }
     match(sFECHA_PAR);
+
+    if (proc_sym != NULL) {
+        proc_sym->extra = param_count;
+    }
     
     if (lookahead.cat == sLOCALS) {
         match(sLOCALS);
@@ -260,7 +289,8 @@ static void parse_princ(void) {
 }
 
 // param ::= id ":" tpo ("," id ":" tpo)*
-static void parse_param(void) {
+static int parse_param(void) {
+    int count = 0;
     do {
         char param_name[256];
         strcpy(param_name, lookahead.lexema);
@@ -269,6 +299,7 @@ static void parse_param(void) {
         SymType type = parse_tpo();
         
         ts_insert(param_name, symPARAM, type, 0);
+        count++;
         
         if (lookahead.cat == sVIRGULA) {
             match(sVIRGULA);
@@ -276,6 +307,8 @@ static void parse_param(void) {
             break;
         }
     } while (1);
+
+    return count;
 }
 
 // bco ::= "sSTART" (cmd ";")* "sEND"
@@ -310,7 +343,7 @@ static void parse_cmd(void) {
             match(sFECHA_PAR);
             break;
         case sSCAN:
-            match(sSCAN); match(sABRE_PAR); match(sIDENTIF); match(sFECHA_PAR);
+            match(sSCAN); match(sABRE_PAR); match(sIDENTIF); parse_vec_tail(); match(sFECHA_PAR);
             break;
         case sSTART:
             parse_bco();
@@ -322,19 +355,30 @@ static void parse_cmd(void) {
             match(sIF); match(sABRE_PAR); parse_expr(); match(sFECHA_PAR); parse_cmd();
             if (lookahead.cat == sELSE) { match(sELSE); parse_cmd(); }
             break;
-        case sWHILE: // loop while
-            match(sLOOP); match(sWHILE); match(sABRE_PAR); parse_expr(); match(sFECHA_PAR); parse_cmd();
+        case sMATCH:
+            parse_match();
+            break;
+        case sFOR:
+            parse_for();
+            break;
+        case sLOOP:
+            match(sLOOP);
+            if (lookahead.cat == sWHILE) {
+                match(sWHILE); match(sABRE_PAR); parse_expr(); match(sFECHA_PAR); parse_cmd();
+            } else {
+                while (lookahead.cat != sUNTIL && lookahead.cat != sEOF) {
+                    parse_cmd();
+                    if (lookahead.cat == sPONTO_VIRG) {
+                        match(sPONTO_VIRG);
+                    }
+                }
+                match(sUNTIL); match(sABRE_PAR); parse_expr(); match(sFECHA_PAR);
+            }
             break;
         case sIDENTIF:
-            // Pode ser atribuição ou chamada de procedimento.
-            match(sIDENTIF);
-            if (lookahead.cat == sATRIB) {
-                match(sATRIB); parse_expr();
-            } else if (lookahead.cat == sABRE_COL) {
-                // Atribuição de vetor
-                match(sABRE_COL); parse_expr(); match(sFECHA_COL); match(sATRIB); parse_expr();
-            } else if (lookahead.cat == sABRE_PAR) {
+            if (lookahead2.cat == sABRE_PAR) {
                 // Chamada de procedimento
+                match(sIDENTIF);
                 match(sABRE_PAR); 
                 if (lookahead.cat != sFECHA_PAR) {
                     parse_expr();
@@ -342,7 +386,7 @@ static void parse_cmd(void) {
                 }
                 match(sFECHA_PAR);
             } else {
-                diag_error(lookahead, "Comando invalido iniciando com identificador");
+                parse_atr();
             }
             break;
         default:
@@ -417,4 +461,103 @@ static void parse_fact(void) {
     } else {
         diag_error(lookahead, "Fator de expressao invalido");
     }
+}
+
+// atr ::= (id | vec) "sATRIB" elem
+static void parse_atr(void) {
+    match(sIDENTIF);
+    parse_vec_tail();
+    match(sATRIB);
+    parse_expr();
+}
+
+// vec tail ::= "[" (expr) "]" | vazio
+static void parse_vec_tail(void) {
+    if (lookahead.cat == sABRE_COL) {
+        match(sABRE_COL);
+        parse_expr();
+        match(sFECHA_COL);
+    }
+}
+
+// mat ::= "sMATCH" "(" expr ")" wlist "sEND"
+static void parse_match(void) {
+    match(sMATCH);
+    match(sABRE_PAR);
+    parse_expr();
+    match(sFECHA_PAR);
+    parse_wlist();
+    match(sEND);
+}
+
+// wlst ::= whn+ (othr)?
+static void parse_wlist(void) {
+    parse_whn();
+    while (lookahead.cat == sWHEN) {
+        parse_whn();
+    }
+    if (lookahead.cat == sOTHERWISE) {
+        parse_othr();
+    }
+}
+
+// whn ::= "sWHEN" wcnd "sIMPLIC" cmd ";"
+static void parse_whn(void) {
+    match(sWHEN);
+    parse_wcnd();
+    match(sIMPLIC);
+    parse_cmd();
+    match(sPONTO_VIRG);
+}
+
+// othr ::= "sOTHERWISE" "sIMPLIC" cmd ";"
+static void parse_othr(void) {
+    match(sOTHERWISE);
+    match(sIMPLIC);
+    parse_cmd();
+    match(sPONTO_VIRG);
+}
+
+// wcnd ::= witem ("," witem )*
+static void parse_wcnd(void) {
+    parse_witem();
+    while (lookahead.cat == sVIRGULA) {
+        match(sVIRGULA);
+        parse_witem();
+    }
+}
+
+// witem ::= wint | wrnge
+static void parse_witem(void) {
+    parse_wint();
+    if (lookahead.cat == sPTOPTO) {
+        match(sPTOPTO);
+        parse_wint();
+    }
+}
+
+// wint ::= ("sSUBRAT")? "sCTEINT"
+static void parse_wint(void) {
+    if (lookahead.cat == sSUBRAT) {
+        match(sSUBRAT);
+    }
+    match(sCTEINT);
+}
+
+// fr ::= "sFOR" atr "sTO" expr ("sSTEP" (id | "sCTEINT"))? "sDO" cmd
+static void parse_for(void) {
+    match(sFOR);
+    parse_atr();
+    match(sTO);
+    parse_expr();
+    if (lookahead.cat == sSTEP) {
+        match(sSTEP);
+        if (lookahead.cat == sIDENTIF) {
+            match(sIDENTIF);
+        } else {
+            match(sCTEINT);
+        }
+    }
+    match(sDO);
+    parse_cmd();
 }

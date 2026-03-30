@@ -1,0 +1,14 @@
+module teste;
+globals
+  a, b : int;
+  vet[5] : int;
+proc main()
+start
+  a := 10;
+  for a := 1 to 5 step 1 do vet[a] := a;
+  b := vet[1] + vet[2] + vet[3];
+  match (b)
+    when 6 => print("soma=6");
+    otherwise => print("soma=", b);
+  end;
+end

@@ -125,7 +125,7 @@ void ts_print(FILE* out) {
             // Formato exigido pela especificação:
             // SCOPE=<descr>  id="<lexema>"  cat=<categ>  tipo=<tipo>  extra=<atrib>
             fprintf(out, "SCOPE=%-20s id=\"%s\"\tcat=%s\ttipo=%s\textra=%d\n", 
-                    s->name, sym->lexema, cat_to_str(sym->cat), type_to_str(sym->type), sym->extra); [cite: 1]
+                    s->name, sym->lexema, cat_to_str(sym->cat), type_to_str(sym->type), sym->extra);
             sym = sym->next;
         }
         s = s->next_in_log;

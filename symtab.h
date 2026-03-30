@@ -1,62 +1,62 @@
 #ifndef SYMTAB_H
 #define SYMTAB_H
 
-#include stdio.h
+#include <stdio.h>
 
- Categorias de identificadores
+// Categorias de identificadores
 typedef enum {
-    symVAR,    Variável simples
-    symVEC,    Vetor
-    symFUNC,   Função (retorna valor)
-    symPROC,   Procedimento (não retorna valor)
-    symPARAM   Parâmetro de sub-rotina
+    symVAR,
+    symVEC,
+    symFUNC,
+    symPROC,
+    symPARAM
 } SymCategory;
 
- Tipos de dados da linguagem SAL
+// Tipos de dados da linguagem SAL
 typedef enum {
-    typeINT, 
-    typeBOOL, 
-    typeCHAR, 
-    typeVOID,  Para procedimentos
-    typeNONE   Para casos onde o tipo não se aplica
+    typeINT,
+    typeBOOL,
+    typeCHAR,
+    typeVOID,
+    typeNONE
 } SymType;
 
- Estrutura de um Símbolo
+// Estrutura de um simbolo
 typedef struct Symbol {
     char lexema[256];
     SymCategory cat;
     SymType type;
-    int extra;  Tamanho do vetor ou qtd de parâmetros 
-    struct Symbol next;
+    int extra;  // Tamanho do vetor ou qtd de parametros
+    struct Symbol *next;
 } Symbol;
 
- Estrutura de um Escopo
+// Estrutura de um escopo
 typedef struct Scope {
-    char name[256];              Ex global, fnSOMA.locals, procmain.block#1
-    Symbol symbols_head;        Início da lista de símbolos deste escopo
-    Symbol symbols_tail;        Fim da lista (para inserção rápida e manter ordem)
-    struct Scope parent;        Ponteiro para o escopo pai (usado na Pilha de Visibilidade)
-    struct Scope next_in_log;   Ponteiro para manter a Lista Mestra (para o log consolidado)
+    char name[256];
+    Symbol *symbols_head;
+    Symbol *symbols_tail;
+    struct Scope *parent;
+    struct Scope *next_in_log;
 } Scope;
 
- Interface pública da Tabela de Símbolos
+// Interface publica da tabela de simbolos
 void ts_init(void);
 
- Gerenciamento de Escopos
-void ts_push_scope(const char scope_name);
+// Gerenciamento de escopos
+void ts_push_scope(const char *scope_name);
 void ts_pop_scope(void);
 
- Inserção e Busca
- Retorna 1 se sucesso, 0 se o identificador já existir no escopo atual
-int ts_insert(const char lexema, SymCategory cat, SymType type, int extra);
+// Insercao e busca
+// Retorna 1 se sucesso, 0 se o identificador ja existir no escopo atual.
+int ts_insert(const char *lexema, SymCategory cat, SymType type, int extra);
 
- Busca o identificador respeitando a visibilidade (do escopo atual até o global)
-Symbol ts_lookup(const char lexema);
+// Busca o identificador respeitando a visibilidade (do escopo atual ao global).
+Symbol *ts_lookup(const char *lexema);
 
- Geração de Logs
-void ts_print(FILE out);
+// Geracao de logs
+void ts_print(FILE *out);
 
- Liberação de memória
+// Liberacao de memoria
 void ts_free(void);
 
-#endif  SYMTAB_H
+#endif // SYMTAB_H

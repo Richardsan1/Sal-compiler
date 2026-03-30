@@ -1,0 +1,9 @@
+module funproc;
+fn soma(a:int, b:int): int
+start
+  ret a + b;
+end
+proc main()
+start
+  print("s=", soma(4, 5));
+end

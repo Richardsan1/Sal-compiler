@@ -5,10 +5,7 @@
 #include "lex.h"
 #include "symtab.h"
 #include "parser.h"
-
-// Protótipos das funções de inicialização do diag.c
-void diag_init(void);
-void diag_close(void);
+#include "diag.h"
 
 int main(int argc, char **argv) {
     if (!opts_parse(argc, argv)) {

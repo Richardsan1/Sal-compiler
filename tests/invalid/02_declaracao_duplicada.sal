@@ -1,0 +1,8 @@
+module invalido2;
+globals
+  a : int;
+  a : int;
+proc main()
+start
+  a := 1;
+end

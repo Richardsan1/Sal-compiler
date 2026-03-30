@@ -1,0 +1,5 @@
+module invalido1;
+proc main()
+start
+  print("oi";
+end
